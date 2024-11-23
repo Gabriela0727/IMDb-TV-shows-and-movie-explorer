@@ -1,0 +1,618 @@
+
+required_packages <- c(
+  "shinythemes", "shiny", "plotly", "jsonlite", "ggplot2", "dplyr",
+  "DT", "tidyr", "ggrepel", "httr", "stringr", "viridis", "scales"
+)
+new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages)
+
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(shinythemes)
+library(jsonlite)
+library(DT)
+library(tidyr)
+library(ggrepel)
+library(httr)
+library(stringr)
+library(viridis)
+library(scales)
+
+# Expanded Dataset with Movies and TV Shows
+media_data <- data.frame(
+  title = c(
+    # Original high-rated entries
+    "Dead Poets Society", "Good Will Hunting", "Schindler's List",
+    "Forrest Gump", "The Shawshank Redemption", "Pulp Fiction",
+    "Inception", "The Matrix", "Interstellar", "Avatar",
+    "Parasite", "Get Out", "Whiplash", "La La Land",
+    "The Social Network", "Moonlight", "Everything Everywhere All at Once",
+    # Elizabeth Olsen movies/shows
+    "WandaVision", "Doctor Strange in the Multiverse of Madness", "Wind River",
+    "Martha Marcy May Marlene", "Sorry for Your Loss", "Love & Death",
+    # Aubrey Plaza movies/shows
+    "Parks and Recreation", "The White Lotus", "Ingrid Goes West",
+    "Safety Not Guaranteed", "Black Bear", "Emily the Criminal",
+    # Paul Mescal movies/shows
+    "Normal People", "Aftersun", "All of Us Strangers",
+    "God's Creatures", "The Lost Daughter", "Carmen",
+    # Lower rated entries
+    "Morbius", "Cats", "Gigli", "Jack and Jill",
+    # Additional acclaimed TV shows
+    "Breaking Bad", "The Wire", "Succession", "Chernobyl",
+    "Better Call Saul", "The Last of Us", "True Detective", "Fargo"
+  ),
+  type = c(
+    rep("Movie", 17),  # Original movies
+    "TV Show", "Movie", "Movie", "Movie", "TV Show", "TV Show",  # Olsen
+    "TV Show", "TV Show", "Movie", "Movie", "Movie", "Movie",    # Plaza
+    "TV Show", "Movie", "Movie", "Movie", "Movie", "Movie",      # Mescal
+    rep("Movie", 4),   # Lower rated
+    rep("TV Show", 8)  # TV shows
+  ),
+  stringsAsFactors = FALSE
+)
+
+
+media_data$genre <- c(
+  "Drama", "Drama", "Drama", "Drama", "Drama", "Crime",
+  "Sci-Fi", "Sci-Fi", "Sci-Fi", "Sci-Fi",
+  "Drama", "Horror", "Drama", "Musical",
+  "Drama", "Drama", "Sci-Fi",
+  "Superhero", "Superhero", "Crime", "Drama", "Drama", "Crime",
+  "Comedy", "Drama", "Drama", "Sci-Fi", "Thriller", "Crime",
+  "Drama", "Drama", "Drama", "Drama", "Drama", "Drama",
+  "Superhero", "Musical", "Comedy", "Comedy",
+  "Crime", "Crime", "Drama", "Drama",
+  "Crime", "Drama", "Crime", "Crime"
+)
+
+
+media_data <- media_data %>%
+  mutate(
+    imdb_rating = as.numeric(c(
+      8.1, 8.3, 9.0, 8.8, 9.3, 8.9,
+      8.8, 8.7, 8.6, 7.8,
+      8.5, 8.0, 8.5, 8.0,
+      7.8, 8.2, 7.9,
+      7.9, 6.8, 7.7, 6.9, 7.4, 7.2,
+      8.1, 7.9, 6.7, 7.0, 6.8, 7.1,
+      8.5, 7.8, 7.5, 6.9, 6.7, 6.4,
+      5.2, 2.8, 2.5, 3.3,
+      9.5, 9.3, 9.0, 9.4,
+      8.9, 9.0, 9.0, 8.9
+    )),
+    
+    rotten_tomatoes = as.numeric(c(
+      85, 97, 98, 71, 91, 92,
+      87, 88, 72, 82,
+      98, 98, 94, 91,
+      96, 98, 95,
+      91, 74, 88, 90, 93, 84,
+      93, 89, 85, 90, 88, 94,
+      91, 96, 89, 87, 94, 76,
+      15, 19, 6, 3,
+      96, 94, 89, 95,
+      98, 96, 87, 93
+    )),
+    
+    metacritic = as.numeric(c(
+      79, 70, 93, 82, 80, 94,
+      74, 73, 74, 83,
+      96, 85, 88, 94,
+      95, 99, 81,
+      77, 60, 87, 76, 82, 75,
+      81, 82, 66, 72, 79, 75,
+      82, 87, 80, 73, 86, 65,
+      35, 39, 18, 23,
+      96, 98, 92, 93,
+      92, 84, 87, 85
+    )),
+    
+    year = as.numeric(c(
+      1989, 1997, 1993, 1994, 1994, 1994,
+      2010, 1999, 2014, 2009,
+      2019, 2017, 2014, 2016,
+      2010, 2016, 2022,
+      2021, 2022, 2017, 2011, 2018, 2023,
+      2009, 2022, 2017, 2012, 2020, 2022,
+      2020, 2022, 2023, 2022, 2021, 2023,
+      2022, 2019, 2003, 2011,
+      2008, 2002, 2018, 2019,
+      2015, 2023, 2014, 2014
+    )),
+    
+    box_office = as.numeric(c(
+      95.9, 225.9, 322.2, 678.2, 58.3, 213.9,
+      825.5, 463.5, 701.8, 2847.2,
+      258.8, 255.5, 49.2, 448.2,
+      224.6, 65.3, 103.7,
+      NA, 955.8, 40.4, 2.9, NA, NA,
+      NA, NA, 3.2, 4.0, 0.9, 13.3,
+      NA, 4.2, 5.1, 0.5, 1.6, 0.8,
+      167.5, 75.5, 7.3, 149.7,
+      NA, NA, NA, NA,
+      NA, NA, NA, NA
+    )),
+    
+    runtime = as.numeric(c(
+      128, 126, 195, 142, 142, 154,
+      148, 136, 169, 162,
+      132, 104, 106, 128,
+      120, 111, 139,
+      350, 126, 107, 102, 380, 420,
+      1250, 420, 97, 86, 104, 93,
+      721, 102, 105, 100, 121, 116,
+      104, 110, 121, 91,
+      3480, 3600, 3480, 330,
+      3480, 540, 480, 530
+    ))
+  )
+
+# Add character columns with proper string handling
+media_data$lead_actor <- as.character(c(
+  "Robin Williams", "Matt Damon", "Liam Neeson",
+  "Tom Hanks", "Tim Robbins", "John Travolta",
+  "Leonardo DiCaprio", "Keanu Reeves", "Matthew McConaughey", "Sam Worthington",
+  "Song Kang-ho", "Daniel Kaluuya", "Miles Teller", "Ryan Gosling",
+  "Jesse Eisenberg", "Trevante Rhodes", "Michelle Yeoh",
+  "Elizabeth Olsen", "Elizabeth Olsen", "Elizabeth Olsen",
+  "Elizabeth Olsen", "Elizabeth Olsen", "Elizabeth Olsen",
+  "Aubrey Plaza", "Aubrey Plaza", "Aubrey Plaza",
+  "Aubrey Plaza", "Aubrey Plaza", "Aubrey Plaza",
+  "Paul Mescal", "Paul Mescal", "Paul Mescal",
+  "Paul Mescal", "Paul Mescal", "Paul Mescal",
+  "Jared Leto", "Taylor Swift", "Ben Affleck", "Adam Sandler",
+  "Bryan Cranston", "Dominic West", "Brian Cox", "Jared Harris",
+  "Bob Odenkirk", "Pedro Pascal", "Matthew McConaughey", "Martin Freeman"
+))
+
+media_data$director <- as.character(c(
+  "Peter Weir", "Gus Van Sant", "Steven Spielberg",
+  "Robert Zemeckis", "Frank Darabont", "Quentin Tarantino",
+  "Christopher Nolan", "Lana Wachowski", "Christopher Nolan", "James Cameron",
+  "Bong Joon-ho", "Jordan Peele", "Damien Chazelle", "Damien Chazelle",
+  "David Fincher", "Barry Jenkins", "Daniel Kwan",
+  "Matt Shakman", "Sam Raimi", "Taylor Sheridan",
+  "Sean Durkin", "James Ponsoldt", "Lesli Linka Glatter",
+  "Greg Daniels", "Mike White", "Matt Spicer",
+  "Colin Trevorrow", "Lawrence Michael Levine", "John Patton Ford",
+  "Lenny Abrahamson", "Charlotte Wells", "Andrew Haigh",
+  "Saela Davis", "Maggie Gyllenhaal", "Benjamin Millepied",
+  "Daniel Espinosa", "Tom Hooper", "Martin Brest", "Dennis Dugan",
+  "Vince Gilligan", "David Simon", "Jesse Armstrong", "Craig Mazin",
+  "Vince Gilligan", "Craig Mazin", "Nic Pizzolatto", "Noah Hawley"
+))
+
+# Generate placeholder image paths with consistent dimensions
+media_data$poster_path <- sprintf("https://via.placeholder.com/300x450.png?text=%s",
+                                  gsub(" ", "+", media_data$title))
+
+# UI
+ui <- fluidPage(
+  theme = shinytheme("flatly"),
+  
+  # CSS
+  tags$head(
+    tags$style(HTML("
+      .movie-card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background-color: white;
+      }
+      .movie-poster {
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
+        display: block;
+        margin: 0 auto;
+      }
+      .rating-badge {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 12px;
+        margin: 2px;
+        color: white;
+        font-weight: bold;
+      }
+      .card-content {
+        margin-top: 10px;
+      }
+    "))
+  ),
+  
+  titlePanel("IMDB Movies & TV Shows Explorer"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+      
+      checkboxGroupInput("media_type",
+                         "Media Type:",
+                         choices = c("Movie", "TV Show"),
+                         selected = c("Movie", "TV Show")
+      ),
+      
+      selectizeInput("selected_titles",
+                     "Select Titles to Compare:",
+                     choices = unique(media_data$title),
+                     multiple = TRUE,
+                     options = list(maxItems = 8)
+      ),
+      
+      sliderInput("year_range",
+                  "Release Year Range:",
+                  min = min(media_data$year),
+                  max = max(media_data$year),
+                  value = c(min(media_data$year), max(media_data$year))
+      ),
+      
+      sliderInput("rating_range",
+                  "IMDb Rating Range:",
+                  min = min(media_data$imdb_rating),
+                  max = max(media_data$imdb_rating),
+                  value = c(min(media_data$imdb_rating), max(media_data$imdb_rating))
+      ),
+      
+      checkboxGroupInput("genres",
+                         "Filter Genres:",
+                         choices = sort(unique(media_data$genre)),
+                         selected = unique(media_data$genre)[1:5]
+      ),
+      
+      textInput("person_search",
+                "Search by Actor/Director:",
+                placeholder = "Enter name..."
+      ),
+      
+      radioButtons("plot_type",
+                   "Visualization Type:",
+                   choices = c(
+                     "Ratings Comparison" = "ratings_compare",
+                     "Box Office Performance" = "box_office",
+                     "Runtime Analysis" = "runtime",
+                     "Year vs Rating" = "year_rating",
+                     "Critical Reception" = "critics"
+                   )
+      )
+    ),
+    
+    mainPanel(
+      width = 9,
+      tabsetPanel(
+        tabPanel("Visualization",
+                 fluidRow(
+                   column(12,
+                          plotlyOutput("comparison_plot", height = "600px")
+                   )
+                 )
+        ),
+        
+        tabPanel("Detailed View",
+                 fluidRow(
+                   column(12,
+                          DTOutput("media_table"),
+                          uiOutput("media_cards")
+                   )
+                 )
+        ),
+        
+        tabPanel("Statistics",
+                 fluidRow(
+                   column(6,
+                          plotlyOutput("genre_stats", height = "400px")
+                   ),
+                   column(6,
+                          plotlyOutput("year_stats", height = "400px")
+                   )
+                 ),
+                 fluidRow(
+                   column(12,
+                          plotlyOutput("rating_distribution", height = "400px")
+                   )
+                 )
+        )
+      )
+    )
+  )
+)
+# Server 
+server <- function(input, output, session) {
+  # Add debugging for filtered data
+  filtered_data <- reactive({
+    req(input$media_type, input$genres, input$year_range, input$rating_range)
+    
+    # Print debugging information
+    print("Current filter settings:")
+    print(paste("Media types:", paste(input$media_type, collapse=", ")))
+    print(paste("Genres:", paste(input$genres, collapse=", ")))
+    print(paste("Year range:", paste(input$year_range, collapse="-")))
+    print(paste("Rating range:", paste(input$rating_range, collapse="-")))
+    
+    # Start with all data
+    data <- media_data
+    
+    # Print number of rows before filtering
+    print(paste("Initial number of rows:", nrow(data)))
+    
+    # Apply each filter separately with debugging
+    data <- data %>% filter(type %in% input$media_type)
+    print(paste("After media type filter:", nrow(data), "rows"))
+    
+    data <- data %>% filter(genre %in% input$genres)
+    print(paste("After genre filter:", nrow(data), "rows"))
+    
+    data <- data %>% filter(
+      year >= input$year_range[1],
+      year <= input$year_range[2]
+    )
+    print(paste("After year filter:", nrow(data), "rows"))
+    
+    data <- data %>% filter(
+      imdb_rating >= input$rating_range[1],
+      imdb_rating <= input$rating_range[2]
+    )
+    print(paste("After rating filter:", nrow(data), "rows"))
+    
+    # Person search with improved handling
+    if (!is.null(input$person_search) && nchar(trimws(input$person_search)) > 0) {
+      search_term <- tolower(trimws(input$person_search))
+      data <- data %>%
+        filter(
+          grepl(search_term, tolower(lead_actor), fixed = TRUE) |
+            grepl(search_term, tolower(director), fixed = TRUE)
+        )
+      print(paste("After person search filter:", nrow(data), "rows"))
+    }
+    
+    # Print titles that made it through all filters
+    print("Titles in filtered data:")
+    print(data$title)
+    
+    return(data)
+  })
+  
+  # Initialize the UI with all options selected
+  observe({
+    updateCheckboxGroupInput(session, "media_type",
+                             selected = unique(media_data$type))
+    
+    updateCheckboxGroupInput(session, "genres",
+                             selected = unique(media_data$genre))
+  })
+  
+  # Comparison Plot
+  output$comparison_plot <- renderPlotly({
+    req(filtered_data())
+    plot_data <- filtered_data()
+    
+    if (!is.null(input$selected_titles) && length(input$selected_titles) > 0) {
+      plot_data <- plot_data %>%
+        filter(title %in% input$selected_titles)
+    }
+    
+    if(nrow(plot_data) == 0) {
+      return(plot_ly() %>% 
+               add_annotations(
+                 text = "No data available for the selected criteria",
+                 showarrow = FALSE,
+                 font = list(size = 20)
+               ))
+    }
+    
+    switch(input$plot_type,
+           "ratings_compare" = {
+             plot_data_long <- plot_data %>%
+               pivot_longer(
+                 cols = c(imdb_rating, rotten_tomatoes, metacritic),
+                 names_to = "rating_source",
+                 values_to = "rating"
+               )
+             
+             plot_ly(plot_data_long, 
+                     x = ~title, 
+                     y = ~rating, 
+                     color = ~rating_source, 
+                     type = "bar") %>%
+               layout(
+                 title = "Ratings Comparison",
+                 xaxis = list(title = "Title", tickangle = 45),
+                 yaxis = list(title = "Rating"),
+                 barmode = "group",
+                 margin = list(b = 150)  # Add bottom margin for rotated labels
+               )
+           },
+           "box_office" = {
+             plot_ly(plot_data, 
+                     x = ~reorder(title, box_office), 
+                     y = ~box_office,
+                     color = ~type,
+                     type = "bar") %>%
+               layout(
+                 title = "Box Office Performance",
+                 xaxis = list(title = "Title", tickangle = 45),
+                 yaxis = list(title = "Box Office (Millions USD)"),
+                 margin = list(b = 150)
+               )
+           },
+           "runtime" = {
+             plot_ly(plot_data, 
+                     x = ~runtime, 
+                     y = ~imdb_rating,
+                     color = ~type,
+                     type = "scatter",
+                     mode = "markers",
+                     text = ~title,
+                     hoverinfo = "text+x+y") %>%
+               layout(
+                 title = "Runtime vs Rating Analysis",
+                 xaxis = list(title = "Runtime (minutes)"),
+                 yaxis = list(title = "IMDb Rating")
+               )
+           },
+           "year_rating" = {
+             plot_ly(plot_data, 
+                     x = ~year, 
+                     y = ~imdb_rating,
+                     color = ~genre,
+                     size = ~runtime,
+                     type = "scatter",
+                     mode = "markers",
+                     text = ~title,
+                     hoverinfo = "text+x+y") %>%
+               layout(
+                 title = "Rating Trends Over Time",
+                 xaxis = list(title = "Release Year"),
+                 yaxis = list(title = "IMDb Rating")
+               )
+           },
+           "critics" = {
+             plot_ly(plot_data, 
+                     x = ~imdb_rating, 
+                     y = ~rotten_tomatoes,
+                     color = ~genre,
+                     size = ~metacritic,
+                     type = "scatter",
+                     mode = "markers",
+                     text = ~title,
+                     hoverinfo = "text+x+y") %>%
+               layout(
+                 title = "Critical Reception Comparison",
+                 xaxis = list(title = "IMDb Rating"),
+                 yaxis = list(title = "Rotten Tomatoes Score")
+               )
+           }
+    )
+  })
+  
+  # Detailed View - Data Table
+  output$media_table <- renderDT({
+    req(filtered_data())
+    filtered_data() %>%
+      select(title, type, genre, year, imdb_rating, rotten_tomatoes, metacritic, lead_actor, director) %>%
+      datatable(
+        options = list(
+          pageLength = 10,
+          scrollX = TRUE,
+          order = list(list(4, 'desc')),  # Sort by IMDb rating by default
+          dom = 'Bfrtip'
+        )
+      )
+  })
+  
+  # Media Cards
+  output$media_cards <- renderUI({
+    req(filtered_data())
+    data <- filtered_data()
+    
+    if(nrow(data) == 0) {
+      return(h3("No media found matching the selected criteria"))
+    }
+    
+    lapply(1:nrow(data), function(i) {
+      div(class = "movie-card",
+          fluidRow(
+            column(4,
+                   tags$img(src = data$poster_path[i], 
+                            class = "movie-poster",
+                            alt = data$title[i],
+                            style = "width: 100%; max-width: 300px;")
+            ),
+            column(8,
+                   div(class = "card-content",
+                       h3(data$title[i], style = "margin-top: 0;"),
+                       p(strong("Type: "), data$type[i]),
+                       p(strong("Genre: "), data$genre[i]),
+                       p(strong("Year: "), data$year[i]),
+                       div(style = "margin: 10px 0;",
+                           span(class = "rating-badge", 
+                                style = "background-color: #007bff;",
+                                paste("IMDb:", data$imdb_rating[i])),
+                           span(class = "rating-badge", 
+                                style = "background-color: #28a745;",
+                                paste("RT:", data$rotten_tomatoes[i], "%")),
+                           span(class = "rating-badge", 
+                                style = "background-color: #17a2b8;",
+                                paste("Metacritic:", data$metacritic[i]))
+                       ),
+                       p(strong("Lead Actor: "), data$lead_actor[i]),
+                       p(strong("Director: "), data$director[i]),
+                       if(!is.na(data$box_office[i])) {
+                         p(strong("Box Office: "), paste("$", format(data$box_office[i], big.mark = ","), "M"))
+                       }
+                   )
+            )
+          )
+      )
+    })
+  })
+  
+  # Statistics Tab - Genre Stats
+  output$genre_stats <- renderPlotly({
+    req(filtered_data())
+    genre_avg <- filtered_data() %>%
+      group_by(genre) %>%
+      summarise(
+        avg_rating = mean(imdb_rating),
+        count = n()
+      )
+    
+    plot_ly(genre_avg, 
+            x = ~reorder(genre, -avg_rating), 
+            y = ~avg_rating,
+            text = ~paste("Count:", count),
+            type = "bar") %>%
+      layout(
+        title = "Average Rating by Genre",
+        xaxis = list(title = "Genre", tickangle = 45),
+        yaxis = list(title = "Average IMDb Rating"),
+        margin = list(b = 120)
+      )
+  })
+  
+  # Year Stats
+  output$year_stats <- renderPlotly({
+    req(filtered_data())
+    year_avg <- filtered_data() %>%
+      group_by(year) %>%
+      summarise(
+        avg_rating = mean(imdb_rating),
+        count = n()
+      )
+    
+    plot_ly(year_avg, 
+            x = ~year, 
+            y = ~avg_rating,
+            text = ~paste("Count:", count),
+            type = "scatter",
+            mode = "lines+markers") %>%
+      layout(
+        title = "Rating Trends Over Time",
+        xaxis = list(title = "Year"),
+        yaxis = list(title = "Average IMDb Rating")
+      )
+  })
+  
+  # Rating Distribution
+  output$rating_distribution <- renderPlotly({
+    req(filtered_data())
+    plot_ly(filtered_data(), 
+            x = ~imdb_rating, 
+            type = "histogram",
+            nbinsx = 20) %>%
+      layout(
+        title = "Distribution of IMDb Ratings",
+        xaxis = list(title = "IMDb Rating"),
+        yaxis = list(title = "Count")
+      )
+  })
+}
+
+
+shinyApp(ui = ui, server = server)
+
